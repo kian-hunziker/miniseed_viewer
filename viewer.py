@@ -126,14 +126,21 @@ class TremorViewer(QtWidgets.QWidget):
         self.all_plots = self.multi_station_view.plots + self.three_comp_view.plots + self.three_comp_with_motion_view.plots
 
         # default view
-        self.stack.setCurrentWidget(self.multi_station_view)
+        if self.state['current_view'] == 'three_comp':
+            self.stack.setCurrentWidget(self.three_comp_view)
+        elif self.state['current_view'] == 'three_comp_with_motion':
+            self.stack.setCurrentWidget(self.three_comp_with_motion_view)
+        elif self.state['current_view'] == 'multi_station':
+            self.stack.setCurrentWidget(self.multi_station_view)
+        else:
+            raise ValueError(f"Invalid current_view: {self.state['current_view']}")
         layout.addWidget(self.stack)
         
         # build controls
         self._build_controls(layout)
         
         # initial refresh
-        QtCore.QTimer.singleShot(0, self.multi_station_view.refresh)
+        QtCore.QTimer.singleShot(0, self.stack.currentWidget().refresh)
         
         # setup dragging signals
         self._setup_dragging_signals()
@@ -189,17 +196,19 @@ class TremorViewer(QtWidgets.QWidget):
 
         # Date controls
         controls.addWidget(QtWidgets.QLabel("Date (MM-DD or YYYY-MM-DD):"), 1, 0)
-        self.box_date = QtWidgets.QLineEdit("08-24")
+        self.box_date = QtWidgets.QLineEdit(self.state["current_date"].strftime("%m-%d"))
         controls.addWidget(self.box_date, 1, 1)
         self.btn_apply_date = QtWidgets.QPushButton("Apply Date")
         controls.addWidget(self.btn_apply_date, 1, 2)
 
         # Bandpass controls
+        f_min = self.state['freqmin'] if self.state['freqmin'] is not None else 2
         controls.addWidget(QtWidgets.QLabel("Fmin (Hz):"), 2, 0)
-        self.box_fmin = QtWidgets.QLineEdit("2")
+        self.box_fmin = QtWidgets.QLineEdit(str(f_min))
         controls.addWidget(self.box_fmin, 2, 1)
         controls.addWidget(QtWidgets.QLabel("Fmax (Hz):"), 2, 2)
-        self.box_fmax = QtWidgets.QLineEdit("8")
+        f_max = self.state['freqmax'] if self.state['freqmax'] is not None else 8
+        self.box_fmax = QtWidgets.QLineEdit(str(f_max))
         controls.addWidget(self.box_fmax, 2, 3)
         self.btn_apply_bp = QtWidgets.QPushButton("Apply Bandpass")
         controls.addWidget(self.btn_apply_bp, 2, 4)
@@ -212,16 +221,24 @@ class TremorViewer(QtWidgets.QWidget):
         self.rbN = QtWidgets.QRadioButton("N")
         self.rbE = QtWidgets.QRadioButton("E")
         self.rbZNE = QtWidgets.QRadioButton("ZNE View")
-        self.rbN.setChecked(True)
         comp_layout.addWidget(self.rbZ)
         comp_layout.addWidget(self.rbN)
         comp_layout.addWidget(self.rbE)
         comp_layout.addWidget(self.rbZNE)
-
+        
+        if self.state['current_view'] == 'multi_station':
+            self.rbZNE.setChecked(False)
+            self.rbZ.setChecked(self.state['component'] == 'Z')
+            self.rbN.setChecked(self.state['component'] == 'N')
+            self.rbE.setChecked(self.state['component'] == 'E')
+        else:
+            self.rbZNE.setChecked(True)
+        
         # Station selector for ZNE view
         self.station_selector = QtWidgets.QComboBox()
         self.station_selector.addItems(self.stations)  # populate with all station names
         comp_layout.addWidget(self.station_selector)
+        self.station_selector.setCurrentText(self.state['zne_station'])
 
         # envelope and waveform visibility
         self.cb_show_waveform = QtWidgets.QCheckBox("Show Waveform")
@@ -309,7 +326,7 @@ class TremorViewer(QtWidgets.QWidget):
         else:
             raise ValueError("Date must be MM-DD or YYYY-MM-DD")
         
-    def _save_state(self, name='last_state'):
+    def _save_state(self, name='last'):
         """
         Safe state as json file to config/name.json
         """
@@ -335,7 +352,7 @@ class TremorViewer(QtWidgets.QWidget):
         self.state = state_loaded
 
     def _update_plots(self):
-        self._save_state(name='last_state')
+        self._save_state(name='last')
         current_view = self.stack.currentWidget()
         current_view.refresh()
 
@@ -489,7 +506,7 @@ class TremorViewer(QtWidgets.QWidget):
             SVGExporter(current_view.graphics.scene()).export(path)
             print(f"Saving plot to {path}.svg")
         # update state with last save folder
-        self._save_state(name='last_state')
+        self._save_state(name='last')
 
     def on_apply_bandpass(self):
         try:
@@ -533,6 +550,7 @@ if __name__ == "__main__":
         max_npts=720_000,
         clip_amplitude=20e6,
         zero_amplitude=25e6,
+        init_from_state='last',
     )
     win.show()
     #QtWidgets.QApplication.processEvents()

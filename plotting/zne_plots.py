@@ -121,10 +121,10 @@ class ThreeComponentSingleStationView(BaseSeismicView):
                 vb.lr_permanent = pg.LinearRegionItem(values=(start_offset, end_offset))
                 vb.addItem(vb.lr_permanent)
                 vb.lr_permanent.setZValue(1000)
-        
-        date_str = self.state['start_time'].strftime("%Y-%m-%d")
-        self.plots[-1].setLabel('bottom', date_str)
 
+        date_str = self.state['start_time'].strftime("%Y-%m-%d")
+        self.plots[-1].setLabel('bottom', f"Station {self.state['zne_station']} on {date_str}")
+        
         duration = self.t[-1]
         for i, (p, curve, station) in enumerate(zip(self.plots, self.curves, self.stations)):
             # adjust x-range
@@ -225,12 +225,5 @@ class ThreeComponentMotionPlotView(ThreeComponentSingleStationView):
         # adjust particle motion plot range
         self.set_centered_range(self.pm_plot, n_data, e_data, x_padding=0.1, y_padding=0.1)
 
-
-        duration = self.t[-1]
-        for i, (p, curve, component) in enumerate(zip(self.plots, self.curves, ['Z', 'N', 'E'])):
-            # adjust x-range
-            duration = len(self.t) / self.fs
-            p.setXRange(0, duration)  # convert samples back to seconds
-        date_str = self.state['start_time'].strftime("%Y-%m-%d")
-        self.plots[-1].setLabel('bottom', f"Station {self.state['zne_station']} on {date_str}")
+        
         
