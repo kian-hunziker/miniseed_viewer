@@ -4,11 +4,8 @@ import numpy as np
 from obspy import Stream, Trace, UTCDateTime, read
 from typing import Union, Tuple
 
-# absolut path for now
-DATA_DIR = '/Users/kianhunziker/Documents/UNI/UNIBAS/MA/seisLM/data/tremor/Tremor_daily'
 
-
-def get_all_miniseed_files(data_dir: str = DATA_DIR) -> list[str]:
+def get_all_miniseed_files(data_dir: str) -> list[str]:
     """
     Get a list of all miniSEED files in the specified data directory.
     The function searches through all subdirectories for files with the .mseed extension.

@@ -9,6 +9,7 @@ import numpy as np
 from obspy import UTCDateTime, Stream, Trace
 from pyqtgraph.exporters import ImageExporter, SVGExporter
 from tqdm import tqdm
+import json
 
 from processing.data_loading import get_all_miniseed_files, load_waveform_multiple_days
 
@@ -33,14 +34,17 @@ class TremorViewer(QtWidgets.QWidget):
                  max_npts: int = 720_000,
                  clip_amplitude: float = 20e6,
                  zero_amplitude: float = 25e6,
+                 init_from_state: str = 'default', # one of default, last
                  ):
         super().__init__()
         self.data_dir = data_dir
         self.fs = fs
         self.stations = stations
         self.max_npts = max_npts
+        self.default_y_range = 4
         
-        self.waveform_files = get_all_miniseed_files()
+        # load waveform data for all stations
+        self.waveform_files = get_all_miniseed_files(data_dir=self.data_dir)
         self.station_streams = {}
         for station in tqdm(self.stations, desc="Loading stations"):
             st = load_waveform_multiple_days(
@@ -63,27 +67,15 @@ class TremorViewer(QtWidgets.QWidget):
         self.resize(1200, 600)
 
         # initial state
-        self.state = {
-            'component': 'N',
-            'start_time': UTCDateTime(2020, 8, 24, 5, 0),
-            'end_time': UTCDateTime(2020, 8, 24, 7, 0),
-            'current_date': UTCDateTime(2020, 8, 24),
-            'freqmin': None,
-            'freqmax': None,
-            'y_limits': {f'{s}_{c}': (-4, 4) for s in stations for c in ['Z', 'N', 'E']},
-            'show_envelope': False,
-            'show_waveform': True,
-            'show_motion_plot': True,
-            'env_cutoff': 0.1,
-            'zne_station': stations[0],
-            'selection_start': None,
-            'selection_end': None,
-            'dragging': False,
-            'current_view': 'multi_station',
-            'downsampling_factor': 1,
-        }
-
-        self.last_save_folder = None
+        if init_from_state in ['default', 'last']:
+            try:
+                self._load_state(name=init_from_state)
+            except:
+                print(f"Failed to load state from config/{init_from_state}.json, using default state.")
+                self._setup_initial_state()
+        else:
+            self._setup_initial_state()
+            
         self.wf_color = 'k'#(100, 100, 100)  # waveform color
         self.wf_linewidth = 0.8  # waveform line width
         self.env_color = 'r'  # envelope color
@@ -145,6 +137,30 @@ class TremorViewer(QtWidgets.QWidget):
         
         # setup dragging signals
         self._setup_dragging_signals()
+
+    def _setup_initial_state(self):
+        self.state = {
+                'component': 'N',
+                'start_time': UTCDateTime(2020, 8, 24, 5, 0),
+                'end_time': UTCDateTime(2020, 8, 24, 7, 0),
+                'current_date': UTCDateTime(2020, 8, 24),
+                'freqmin': None,
+                'freqmax': None,
+                'y_limits': {f'{s}_{c}': (-self.default_y_range, self.default_y_range) for s in self.stations for c in ['Z', 'N', 'E']},
+                'show_envelope': False,
+                'show_waveform': True,
+                'show_motion_plot': True,
+                'env_cutoff': 0.1,
+                'zne_station': self.stations[0],
+                'selection_start': None,
+                'selection_end': None,
+                'dragging': False,
+                'current_view': 'multi_station',
+                'downsampling_factor': 1,
+                'last_save_folder': None,
+            }
+        # override saved default state, to update defaults
+        self._save_state(name='default')
         
     
     def _get_all_plots(self):
@@ -292,8 +308,34 @@ class TremorViewer(QtWidgets.QWidget):
             return UTCDateTime(f"{year}-{month:02d}-{day:02d}")
         else:
             raise ValueError("Date must be MM-DD or YYYY-MM-DD")
+        
+    def _save_state(self, name='last_state'):
+        """
+        Safe state as json file to config/name.json
+        """
+        state_copy = self.state.copy()
+        # convert UTCDateTime to isoformat strings
+        for key in state_copy.keys():
+            if state_copy[key] is not None:
+                if isinstance(state_copy[key], UTCDateTime):
+                    state_copy[key] = state_copy[key].isoformat()
+        with open(f"config/{name}.json", "w") as f:
+            json.dump(state_copy, f, indent=4)
+
+    def _load_state(self, name='default'):
+        """
+        Load state from config/state.json
+        """
+        with open(f"config/{name}.json", "r") as f:
+            state_loaded = json.load(f)
+        for key in state_loaded.keys():
+            if state_loaded[key] is not None:
+                if 'time' in key or 'date' in key:
+                    state_loaded[key] = UTCDateTime(state_loaded[key])
+        self.state = state_loaded
 
     def _update_plots(self):
+        self._save_state(name='last_state')
         current_view = self.stack.currentWidget()
         current_view.refresh()
 
@@ -331,7 +373,7 @@ class TremorViewer(QtWidgets.QWidget):
         # loop through y-limits and reset to default
         current_widget = self.stack.currentWidget()
         for p in current_widget.plots:
-            p.setYRange(-4, 4)
+            p.setYRange(-self.default_y_range, self.default_y_range)
         self._update_plots()
 
     def on_apply_time(self):
@@ -425,8 +467,8 @@ class TremorViewer(QtWidgets.QWidget):
 
     def save_plot(self):
         default_name = f'tremor_plot_{self.state["current_date"].strftime("%Y%m%d")}_{self.state["component"]}_{self.state["freqmin"]}-{self.state["freqmax"]}Hz'
-        if self.last_save_folder:
-            start_path = os.path.join(self.last_save_folder, default_name)
+        if self.state['last_save_folder']:
+            start_path = os.path.join(self.state['last_save_folder'], default_name)
         else:
             start_path = os.path.join("outputs", default_name)
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -434,7 +476,7 @@ class TremorViewer(QtWidgets.QWidget):
         )
         # update last save folder
         if path:
-            self.last_save_folder = os.path.dirname(path)
+            self.state['last_save_folder'] = os.path.dirname(path)
         if not path:
             return
 
@@ -446,6 +488,8 @@ class TremorViewer(QtWidgets.QWidget):
         elif path.endswith(".svg"):
             SVGExporter(current_view.graphics.scene()).export(path)
             print(f"Saving plot to {path}.svg")
+        # update state with last save folder
+        self._save_state(name='last_state')
 
     def on_apply_bandpass(self):
         try:
@@ -477,10 +521,13 @@ class TremorViewer(QtWidgets.QWidget):
     
 
 if __name__ == "__main__":
+    data_dir = '/Users/kianhunziker/Documents/UNI/UNIBAS/MA/seisLM/data/tremor/Tremor_daily'
+    
+    
     app = QtWidgets.QApplication(sys.argv)
     pg.setConfigOptions(antialias=True)
     win = TremorViewer(
-        data_dir='', # placeholder
+        data_dir=data_dir,
         stations=['JUDI', 'LAFE', 'JACO', 'INDI', ],
         fs=100,
         max_npts=720_000,
@@ -490,4 +537,3 @@ if __name__ == "__main__":
     win.show()
     #QtWidgets.QApplication.processEvents()
     sys.exit(app.exec())
-    
