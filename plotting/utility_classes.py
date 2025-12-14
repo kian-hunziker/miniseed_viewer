@@ -13,18 +13,25 @@ class TimeAxis(pg.AxisItem):
         super().__init__(orientation='bottom', **kwargs)
         self.start_time = start_time  # should be a datetime object
         self.resampling_factor = 1
+        self.format = "%H:%M"
 
     def tickStrings(self, values, scale, spacing):
         strings = []
         for x in values:
             t = self.start_time + self.resampling_factor * timedelta(seconds=x)
-            strings.append(t.strftime("%H:%M"))
+            strings.append(t.strftime(self.format))
         return strings
     
     def set_resampling_factor(self, factor):
         self.resampling_factor = factor
-    
-    
+
+    def set_format(self, fmt):
+        """
+        Set the datetime format for the axis labels.
+        Choose from: ["%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"]
+        """
+        self.format = fmt
+
     
 class YZoomOnlyViewBox(pg.ViewBox):
     dragging_signal = QtCore.Signal(bool)
