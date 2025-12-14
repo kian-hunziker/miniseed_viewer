@@ -556,7 +556,7 @@ if __name__ == "__main__":
         max_npts=720_000,
         clip_amplitude=20e6,
         zero_amplitude=25e6,
-        init_from_state='last',
+        init_from_state='default',
     )
     win.show()
     sys.exit(app.exec())

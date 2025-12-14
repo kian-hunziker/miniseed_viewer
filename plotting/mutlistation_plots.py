@@ -116,8 +116,8 @@ class MultiStationSingleComponentView(BaseSeismicView):
 
             # mark selection region if any
             if self.state['selection_start'] and self.state['selection_end']:
-                start_offset = self.state['selection_start'] - self.state['start_time']
-                end_offset = self.state['selection_end'] - self.state['start_time']
+                start_offset = (self.state['selection_start'] - self.state['start_time']) / self.state['downsampling_factor']
+                end_offset = (self.state['selection_end'] - self.state['start_time']) / self.state['downsampling_factor']
                 vb = self.plots[i].getViewBox()
                 if vb.lr_permanent is not None:
                     vb.removeItem(vb.lr_permanent)
