@@ -1,6 +1,15 @@
 from PySide6 import QtWidgets
 from PySide6 import QtCore
 import pyqtgraph as pg
+import numpy as np
+
+from processing.data_processing import (
+    bandpass_filter,
+    normalize_stream,
+    select_time_window,
+    select_component,
+    compute_envelope,
+)
 
 class BaseSeismicView(QtWidgets.QWidget):
     """
@@ -51,6 +60,9 @@ class BaseSeismicView(QtWidgets.QWidget):
         self.curves = []
         self.envelopes = []
 
+        self.t = None  # time array for waveforms
+        self.env_t = None  # time array for envelopes
+
         self.shift_pressed = False
         self._install_shift_events()
     
@@ -81,4 +93,73 @@ class BaseSeismicView(QtWidgets.QWidget):
 
     def refresh(self):
         raise NotImplementedError
+    
+    def update_wf_plot(self, i, station, component):
+        full_stream = self.stream_dict[station]
+
+        st = select_time_window(
+            full_stream,
+            self.state['start_time'],
+            self.state['end_time']
+        )
+        st = select_component(st, component=component)
+
+        if self.state['freqmin'] and self.state['freqmax']:
+            st = bandpass_filter(
+                st,
+                self.state['freqmin'],
+                self.state['freqmax'],
+                fs=self.fs
+            )
+
+        data = st[0].data
+        sample_interval = max(1, len(data) // self.max_npts)
+        self.state['downsampling_factor'] = sample_interval
+
+        if i == 0:
+            self.t = np.arange(len(data)) / self.fs
+            self.t = self.t[::sample_interval] / sample_interval
+            self.time_axis.set_resampling_factor(sample_interval)
+
+        if len(data) > self.max_npts:
+            data = data[::sample_interval]
+
+        data = normalize_stream(data)
+
+        if self.state['show_waveform']:
+            self.curves[i].setData(self.t, data)
+        else:
+            self.curves[i].clear()
+
+        if self.state['show_envelope']:
+            env = compute_envelope(
+                data,
+                cutoff=self.state['env_cutoff'],
+                fs=self.fs / sample_interval
+            )
+            env_t = np.linspace(self.t[0], self.t[-1], len(env))
+            self.envelopes[i].setData(env_t, env)
+        else:
+            self.envelopes[i].clear()
+
+        # mark selection region if any
+        if self.state['selection_start'] and self.state['selection_end']:
+            start_offset = (self.state['selection_start'] - self.state['start_time']) / self.state['downsampling_factor']
+            end_offset = (self.state['selection_end'] - self.state['start_time']) / self.state['downsampling_factor']
+            vb = self.plots[i].getViewBox()
+            if vb.lr_permanent is not None:
+                vb.removeItem(vb.lr_permanent)
+                vb.lr_permanent = None
+            vb.lr_permanent = pg.LinearRegionItem(values=(start_offset, end_offset))
+            vb.addItem(vb.lr_permanent)
+            vb.lr_permanent.setZValue(1000)
+
+    def get_time_axis_format(self) -> str:
+        duration_seconds = self.state['end_time'] - self.state['start_time']
+        if duration_seconds <= 600:
+            return "%H:%M:%S"
+        elif self.state['start_time'].day != self.state['end_time'].day:
+            return "%Y-%m-%d\n%H:%M"
+        else:
+            return "%H:%M"
     
