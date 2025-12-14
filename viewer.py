@@ -126,9 +126,9 @@ class TremorViewer(QtWidgets.QWidget):
         self.all_plots = self.multi_station_view.plots + self.three_comp_view.plots + self.three_comp_with_motion_view.plots
 
         # default view
-        if self.state['current_view'] == 'three_comp':
+        if self.state['current_view'] == 'three_comp' and not self.state['show_motion_plot']:
             self.stack.setCurrentWidget(self.three_comp_view)
-        elif self.state['current_view'] == 'three_comp_with_motion':
+        elif self.state['current_view'] == 'three_comp' and self.state['show_motion_plot']:
             self.stack.setCurrentWidget(self.three_comp_with_motion_view)
         elif self.state['current_view'] == 'multi_station':
             self.stack.setCurrentWidget(self.multi_station_view)
@@ -345,9 +345,10 @@ class TremorViewer(QtWidgets.QWidget):
         """
         with open(f"config/{name}.json", "r") as f:
             state_loaded = json.load(f)
+        utc_keys = ['start_time', 'end_time', 'current_date', 'selection_start', 'selection_end']
         for key in state_loaded.keys():
             if state_loaded[key] is not None:
-                if 'time' in key or 'date' in key:
+                if key in utc_keys and isinstance(state_loaded[key], str):
                     state_loaded[key] = UTCDateTime(state_loaded[key])
         self.state = state_loaded
 
@@ -538,6 +539,11 @@ class TremorViewer(QtWidgets.QWidget):
     
 
 if __name__ == "__main__":
+
+    # Argument parsing
+    # data directory, stations, fs, max_npts, clip_amplitude, zero_amplitude, init_state
+    parser = None
+
     data_dir = '/Users/kianhunziker/Documents/UNI/UNIBAS/MA/seisLM/data/tremor/Tremor_daily'
     
     
@@ -553,5 +559,4 @@ if __name__ == "__main__":
         init_from_state='last',
     )
     win.show()
-    #QtWidgets.QApplication.processEvents()
     sys.exit(app.exec())

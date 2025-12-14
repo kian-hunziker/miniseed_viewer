@@ -15,11 +15,13 @@ from processing.data_processing import (
 
 
 class ThreeComponentSingleStationView(BaseSeismicView):
+    """
+    View for plotting three components (Z, N, E) of a single station.
+    """
     def __init__(self, state, **kwargs):
         super().__init__(state, **kwargs)
         self.time_axis = TimeAxis(start_time=self.state['start_time'])
         self.build_plots()
-
 
     def build_plots(self):
         self.clear()
@@ -65,7 +67,6 @@ class ThreeComponentSingleStationView(BaseSeismicView):
         for p in self.plots:
             p.setYRange(-4, 4)
 
-    
     def refresh(self):
         self.time_axis.start_time = self.state['start_time']
 
@@ -133,6 +134,9 @@ class ThreeComponentSingleStationView(BaseSeismicView):
 
 
 class ThreeComponentMotionPlotView(ThreeComponentSingleStationView):
+    """
+    Extends ThreeComponentSingleStationView to add a particle motion plot (N vs E) alongside the three component plots.
+    """
     def __init__(self, state, **kwargs):
         super().__init__(state, **kwargs)
     
@@ -224,6 +228,3 @@ class ThreeComponentMotionPlotView(ThreeComponentSingleStationView):
         self.pm_curve.setData(e_data, n_data)
         # adjust particle motion plot range
         self.set_centered_range(self.pm_plot, n_data, e_data, x_padding=0.1, y_padding=0.1)
-
-        
-        
