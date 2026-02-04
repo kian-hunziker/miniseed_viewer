@@ -124,10 +124,17 @@ class BaseSeismicView(QtWidgets.QWidget):
         if len(data) > self.max_npts:
             data = data[::sample_interval]
 
+        if len(data) > len(self.t):
+            data = data[:len(self.t)]
+        elif len(data) < len(self.t):
+            data = np.pad(data, (0, len(self.t) - len(data)), 'constant')
+
         data = normalize_stream(data)
 
         if self.state['show_waveform']:
             self.curves[i].setData(self.t, data)
+            # adjust y-range according to std
+            self.plots[i].setYRange(-5, 5)
         else:
             self.curves[i].clear()
 

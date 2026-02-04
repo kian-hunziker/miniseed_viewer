@@ -82,6 +82,8 @@ class ThreeComponentSingleStationView(BaseSeismicView):
             # adjust x-range
             # corrected for downsampling in TimeAxis
             p.setXRange(0, duration)  # convert samples back to seconds
+            # limit the x-axis zoom to the data range
+            #p.getViewBox().setLimits(xMin=0, xMax=duration)
 
 
 class ThreeComponentMotionPlotView(ThreeComponentSingleStationView):
