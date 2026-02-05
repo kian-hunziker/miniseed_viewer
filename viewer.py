@@ -23,6 +23,7 @@ from processing.data_loading import (
 
 from plotting.mutlistation_plots import MultiStationSingleComponentView
 from plotting.zne_plots import ThreeComponentSingleStationView, ThreeComponentMotionPlotView
+from plotting.spectogram_plots import MultistationWithSpectogram
 
 from processing.data_processing import (
     clip_trace_amplitude,
@@ -84,6 +85,7 @@ class TremorViewer(QtWidgets.QWidget):
         if init_from_state in ['default', 'last']:
             try:
                 self._load_state(name=init_from_state)
+                #print(self.state)
             except:
                 print(f"Failed to load state from config/{init_from_state}.json, using default state.")
                 self._setup_initial_state()
@@ -113,13 +115,21 @@ class TremorViewer(QtWidgets.QWidget):
         self.stack = QtWidgets.QStackedWidget()
 
         self.multi_station_view = MultiStationSingleComponentView(
+                stations=self.stations,
+                state=self.state, 
+                stream_dict=self.station_streams,
+                max_npts=self.max_npts,
+                fs=self.fs,
+                **plot_args
+            )
+        self.multi_station_view_spectrograms = MultistationWithSpectogram(
             stations=self.stations,
             state=self.state, 
             stream_dict=self.station_streams,
             max_npts=self.max_npts,
             fs=self.fs,
             **plot_args
-            )
+        )
         self.three_comp_view = ThreeComponentSingleStationView(
             stations=self.stations,
             state=self.state,
@@ -139,7 +149,8 @@ class TremorViewer(QtWidgets.QWidget):
         self.stack.addWidget(self.multi_station_view)
         self.stack.addWidget(self.three_comp_view)
         self.stack.addWidget(self.three_comp_with_motion_view)
-        self.all_plots = self.multi_station_view.plots + self.three_comp_view.plots + self.three_comp_with_motion_view.plots
+        self.stack.addWidget(self.multi_station_view_spectrograms)
+        self.all_plots = self.multi_station_view.plots + self.three_comp_view.plots + self.three_comp_with_motion_view.plots + self.multi_station_view_spectrograms.plots + self.multi_station_view_spectrograms.spectrogram_plots
 
         # default view
         if self.state['current_view'] == 'three_comp' and not self.state['show_motion_plot']:
@@ -148,6 +159,8 @@ class TremorViewer(QtWidgets.QWidget):
             self.stack.setCurrentWidget(self.three_comp_with_motion_view)
         elif self.state['current_view'] == 'multi_station':
             self.stack.setCurrentWidget(self.multi_station_view)
+        elif self.state['current_view'] == 'multi_station_spectrograms':
+            self.stack.setCurrentWidget(self.multi_station_view_spectrograms)
         else:
             raise ValueError(f"Invalid current_view: {self.state['current_view']}")
         layout.addWidget(self.stack)
@@ -186,6 +199,13 @@ class TremorViewer(QtWidgets.QWidget):
                 'last_plot_save_folder': None,
                 'last_catalog_save_folder': None,
                 'last_catalog_load_folder': None,
+                'spectrogram': {
+                    'nperseg': 256,
+                    'overlap': 0.5,
+                    'cmap': 'viridis',
+                    'mode': 'psd',
+                    'log_scale': True
+                }
             }
         # override saved default state, to update defaults
         self._save_state(name='default')
@@ -238,6 +258,9 @@ class TremorViewer(QtWidgets.QWidget):
     
     def _setup_mouse_signals(self):
         # All plots share the same GraphicsScene
+        for p in self._get_all_plots():
+            vb = p.getViewBox()
+            vb.scene().sigMouseClicked.connect(self._on_scene_mouse_clicked)
         scene = self.all_plots[0].scene()
         scene.sigMouseClicked.connect(self._on_scene_mouse_clicked)
     
@@ -313,20 +336,23 @@ class TremorViewer(QtWidgets.QWidget):
         controls.addWidget(self.event_list, 4, 0, 1, 2)
 
         # envelope and waveform visibility
+        self.cb_show_spectrogram = QtWidgets.QCheckBox("Show Spectrogram")
+        self.cb_show_spectrogram.setChecked(self.state['current_view'] == 'multi_station_spectrograms')
+        controls.addWidget(self.cb_show_spectrogram, 0, 6)
         self.cb_show_waveform = QtWidgets.QCheckBox("Show Waveform")
         self.cb_show_waveform.setChecked(self.state['show_waveform'])
         controls.addWidget(self.cb_show_waveform, 0, 5)
         self.cb_show_envelope = QtWidgets.QCheckBox("Show Envelope")
         self.cb_show_envelope.setChecked(self.state['show_envelope'])
-        controls.addWidget(self.cb_show_envelope, 0, 6)
+        controls.addWidget(self.cb_show_envelope, 1, 5)
         self.cb_show_motion_plot = QtWidgets.QCheckBox("Show Motion Plot")
         self.cb_show_motion_plot.setChecked(self.state['show_motion_plot'])
         controls.addWidget(self.cb_show_motion_plot, 0, 7)
         
         self.box_env_cutoff = QtWidgets.QLineEdit(str(self.state['env_cutoff']))
-        controls.addWidget(self.box_env_cutoff, 1, 5)
+        controls.addWidget(self.box_env_cutoff, 1, 6)
         self.btn_apply_env_cutoff = QtWidgets.QPushButton("Apply Env Cutoff")
-        controls.addWidget(self.btn_apply_env_cutoff, 1, 6)
+        controls.addWidget(self.btn_apply_env_cutoff, 1, 7)
 
         # Reset Y button
         self.btn_reset_y = QtWidgets.QPushButton("Reset Y-Limits")
@@ -363,6 +389,7 @@ class TremorViewer(QtWidgets.QWidget):
         self.btn_add_event.clicked.connect(self.on_event_added)
         self.btn_save_load_catalog.clicked.connect(self.catalog_dialog)
         self.btn_edit_catalog.clicked.connect(self.edit_catalog)
+        self.cb_show_spectrogram.stateChanged.connect(self.change_view_mode)
 
         # connect return pressed in text boxes to apply functions
         self.box_start.returnPressed.connect(self.on_apply_time)
@@ -456,9 +483,14 @@ class TremorViewer(QtWidgets.QWidget):
                 self.state['current_view'] = 'three_comp'
                 self.stack.setCurrentWidget(self.three_comp_view)
         else:
-            print("Switching to multi-station single-component view")
-            self.state['current_view'] = 'multi_station'
-            self.stack.setCurrentWidget(self.multi_station_view)
+            if self.cb_show_spectrogram.isChecked():
+                print("Switching to multi-station spectrogram view")
+                self.state['current_view'] = 'multi_station_spectrograms'
+                self.stack.setCurrentWidget(self.multi_station_view_spectrograms)
+            else:
+                print("Switching to multi-station single-component view")
+                self.state['current_view'] = 'multi_station'
+                self.stack.setCurrentWidget(self.multi_station_view)
         self._update_plots()
     
     def on_apply_bandpass(self):
@@ -749,6 +781,15 @@ class TremorViewer(QtWidgets.QWidget):
             if vb.sceneBoundingRect().contains(scene_pos):
                 data_pos = vb.mapSceneToView(scene_pos)
                 return plot, vb, data_pos
+            
+        try:
+            for plot in self.stack.currentWidget().spectrogram_plots:
+                vb = plot.vb
+                if vb.sceneBoundingRect().contains(scene_pos):
+                    data_pos = vb.mapSceneToView(scene_pos)
+                    return plot, vb, data_pos
+        except AttributeError:
+            pass
 
         return None, None, None
 
@@ -759,10 +800,12 @@ class TremorViewer(QtWidgets.QWidget):
 
         if plot is None:
             # Click was NOT on a plot (controls, margins, empty space)
+            print("Click not on a plot, ignoring.")
             return
 
         # Click was on a plot
         if event.double():
+            print("Double click detected, clearing selection.")
             for p in self._get_all_plots():
                 vb = p.getViewBox()
                 vb.clear_selection()
