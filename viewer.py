@@ -25,6 +25,8 @@ from plotting.mutlistation_plots import MultiStationSingleComponentView
 from plotting.zne_plots import ThreeComponentSingleStationView, ThreeComponentMotionPlotView
 from plotting.spectogram_plots import MultistationWithSpectogram
 
+from plotting.spectrogram_control import SpectrogramControlWindow
+
 from processing.data_processing import (
     clip_trace_amplitude,
     set_high_amplitude_gaps_to_zero,
@@ -176,6 +178,12 @@ class TremorViewer(QtWidgets.QWidget):
         # setup mouse signals
         self._setup_mouse_signals()
 
+        self.spec_controls = SpectrogramControlWindow(self.state)
+        self.spec_controls.paramsChanged.connect(self._update_plots)
+
+        if self.state['spectrogram']['show_control']:
+            self.spec_controls.show()
+
         
     def _setup_initial_state(self):
         self.state = {
@@ -204,7 +212,8 @@ class TremorViewer(QtWidgets.QWidget):
                     'overlap': 0.5,
                     'cmap': 'viridis',
                     'mode': 'psd',
-                    'log_scale': True
+                    'log_scale': True,
+                    'show_control': True,
                 }
             }
         # override saved default state, to update defaults
@@ -348,6 +357,9 @@ class TremorViewer(QtWidgets.QWidget):
         self.cb_show_motion_plot = QtWidgets.QCheckBox("Show Motion Plot")
         self.cb_show_motion_plot.setChecked(self.state['show_motion_plot'])
         controls.addWidget(self.cb_show_motion_plot, 0, 7)
+        self.show_spectrogram_control = QtWidgets.QCheckBox("Spectrogram Settings")
+        controls.addWidget(self.show_spectrogram_control, 2, 5)
+        self.show_spectrogram_control.setChecked(self.state['spectrogram']['show_control'])
         
         self.box_env_cutoff = QtWidgets.QLineEdit(str(self.state['env_cutoff']))
         controls.addWidget(self.box_env_cutoff, 1, 6)
@@ -390,6 +402,7 @@ class TremorViewer(QtWidgets.QWidget):
         self.btn_save_load_catalog.clicked.connect(self.catalog_dialog)
         self.btn_edit_catalog.clicked.connect(self.edit_catalog)
         self.cb_show_spectrogram.stateChanged.connect(self.change_view_mode)
+        self.show_spectrogram_control.stateChanged.connect(self.on_show_spectrogram_control)
 
         # connect return pressed in text boxes to apply functions
         self.box_start.returnPressed.connect(self.on_apply_time)
@@ -472,6 +485,12 @@ class TremorViewer(QtWidgets.QWidget):
     def on_dragging_changed(self, dragging):
         # update dragging state
         self.state['dragging'] = dragging
+
+    def on_show_spectrogram_control(self, state):
+        if state > 0:
+            self.spec_controls.show()
+        else:
+            self.spec_controls.hide()
 
     def change_view_mode(self):
         if self.rbZNE.isChecked():

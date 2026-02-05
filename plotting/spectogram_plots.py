@@ -118,6 +118,9 @@ class MultistationWithSpectogram(BaseSeismicView):
 
 
     def update_spectrogram(self, i, station):
+        if self.state['spectrogram']['cmap'] != self.color_map:
+            self.update_color_map(self.state['spectrogram']['cmap'])
+            
         full_stream = self.stream_dict[station]
 
         st = select_time_window(
@@ -190,6 +193,8 @@ class MultistationWithSpectogram(BaseSeismicView):
             vb.lr_permanent = pg.LinearRegionItem(values=(start_offset, end_offset))
             vb.addItem(vb.lr_permanent)
             vb.lr_permanent.setZValue(1000)
+
+        self.spectrogram_plots[i].setYRange(spectrogram_params['fmin'], spectrogram_params['fmax'], padding=0)
         
     def refresh(self):
         # Refresh time axis
@@ -210,5 +215,4 @@ class MultistationWithSpectogram(BaseSeismicView):
             # adjust x-range
             # this is corrected for downsampling in TimeAxis
             p.setXRange(0, duration)  # convert samples back to seconds
-        print("Updated spectrogram plots")
 
