@@ -1,0 +1,9 @@
+numpy
+scipy
+PyQt6
+PySide6
+obspy
+tqdm
+pyqtgraph
+pandas
+torch
