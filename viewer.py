@@ -151,6 +151,9 @@ class TremorViewer(QtWidgets.QMainWindow):
                 self.event_catalog = {}
         
         self.load_waveform_data()
+
+        self.statusBar().showMessage("Ready")
+        self._update_selection_info()
             
         self.wf_color = 'k'#(100, 100, 100)  # waveform color
         self.wf_linewidth = 0.8  # waveform line width
@@ -597,9 +600,26 @@ class TremorViewer(QtWidgets.QMainWindow):
                     state_loaded[key] = UTCDateTime(state_loaded[key])
         self.state = state_loaded
 
+    def _update_selection_info(self):
+        if self.state['selection_start'] and self.state['selection_end']:
+            start = UTCDateTime(self.state['selection_start'])
+            end = UTCDateTime(self.state['selection_end'])
+            start_str = start.strftime("%Y-%m-%d %H:%M:%S")  # format with milliseconds
+            end_str = end.strftime("%Y-%m-%d %H:%M:%S")  # format with milliseconds
+            selection_duration = end - start
+            # format duration in HH:MM:SS.ms
+            hours = int(selection_duration // 3600)
+            minutes = int((selection_duration % 3600) // 60)
+            seconds = selection_duration % 60
+            selection_duration_str = f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
+            self.statusBar().showMessage(f"Selected: {start_str} to {end_str}  |  ({selection_duration_str} seconds)")
+        else:
+            self.statusBar().showMessage("Shift and drag on plot to select")
+
     def _update_plots(self):
         self._save_state(name='last')
         self.load_waveform_data()
+        self._update_selection_info()
         current_view = self.stack.currentWidget()
         current_view.refresh()
 
