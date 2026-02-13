@@ -4,7 +4,7 @@ import numpy as np
 from obspy import Stream, Trace, UTCDateTime, read
 from typing import Union, Tuple
 import pandas as pd
-import torch
+#import torch
 import json
 import re
 
@@ -106,7 +106,9 @@ def read_event_catalog(
             df.insert(0, 'event_id', range(len(df)))
         catalog = df.to_dict(orient='index')
     elif file_extension in ['pt', 'pth']:
-        catalog = torch.load(catalog_file)
+        #catalog = torch.load(catalog_file)
+        print(f"PyTorch format for event catalogs is currently not supported. Please convert the catalog to JSON or CSV format. Skipping loading catalog at {catalog_file}.")
+        pass
     else:
         raise ValueError(f"Unsupported catalog file format: {file_extension}")
     
@@ -166,7 +168,8 @@ def write_event_catalog(
         with open(output_file, 'w') as f:
             json.dump(serializable_dict, f, indent=4)
     elif file_extension in ['pt', 'pth']:
-        torch.save(serializable_dict, output_file)
+        print(f"PyTorch format for event catalogs is currently not supported. Please convert the catalog to JSON or CSV format. Skipping writing catalog to {output_file}.")
+        #torch.save(serializable_dict, output_file)
     elif file_extension == 'csv':
         df = pd.DataFrame.from_dict(serializable_dict, orient='index')
         df.to_csv(output_file, index_label='event_id')

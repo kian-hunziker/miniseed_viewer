@@ -1,7 +1,9 @@
 import sys
 import numpy as np
+
 from PySide6 import QtWidgets
 from PySide6 import QtCore
+
 import pyqtgraph as pg
 import os
 import glob

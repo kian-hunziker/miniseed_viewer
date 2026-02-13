@@ -6,4 +6,3 @@ obspy
 tqdm
 pyqtgraph
 pandas
-torch
