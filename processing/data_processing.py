@@ -53,6 +53,11 @@ def select_time_window(stream: Stream, starttime: UTCDateTime, endtime: UTCDateT
 
 def select_component(stream: Stream, component: str) -> Stream:
     selected_stream = stream.select(component=component)
+    try:
+        selected_stream = selected_stream.select(channel='HH' + component[-1])
+    except Exception:
+        print(f'Could not select channel HH{component[-1]}')
+        pass
     return selected_stream
 
 def compute_envelope(data: np.ndarray, cutoff=0.1, fs: int = 100) -> np.ndarray:

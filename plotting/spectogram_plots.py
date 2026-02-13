@@ -36,9 +36,14 @@ class MultistationWithSpectogram(BaseSeismicView):
 
     def update_color_map(self, cmap_name):
         self.color_map = cmap_name
-        self.spec_map = pg.colormap.get(cmap_name)
-        for img in self.spectrogram_images:
-            img.setLookupTable(self.spec_map.getLookupTable(0.0, 1.0, 256))
+        if cmap_name == 'black':
+            # remove color map and use grayscale
+            for img in self.spectrogram_images:
+                img.setLookupTable(None)
+        else:
+            self.spec_map = pg.colormap.get(cmap_name)
+            for img in self.spectrogram_images:
+                img.setLookupTable(self.spec_map.getLookupTable(0.0, 1.0, 256))
 
     def build_plots(self):
         self.clear()
@@ -120,7 +125,7 @@ class MultistationWithSpectogram(BaseSeismicView):
     def update_spectrogram(self, i, station):
         if self.state['spectrogram']['cmap'] != self.color_map:
             self.update_color_map(self.state['spectrogram']['cmap'])
-            
+
         full_stream = self.stream_dict[station]
 
         st = select_time_window(
@@ -130,7 +135,16 @@ class MultistationWithSpectogram(BaseSeismicView):
         )
         st = select_component(st, component=self.state['component'])
 
-        if self.state['freqmin'] and self.state['freqmax']:
+        if self.state['spectrogram'].get('independent_filtering', False):
+            bandpass_min = self.state['spectrogram'].get('f_bandpass_min', 0.1)
+            bandpass_max = self.state['spectrogram'].get('f_bandpass_max', 20.0)
+            st = bandpass_filter(
+                st,
+                bandpass_min,
+                bandpass_max,
+                fs=self.fs
+            )
+        elif self.state['freqmin'] and self.state['freqmax']:
             st = bandpass_filter(
                 st,
                 self.state['freqmin'],
@@ -139,6 +153,21 @@ class MultistationWithSpectogram(BaseSeismicView):
             )
 
         data = st[0].data
+        sample_interval = max(1, len(data) // self.max_npts)
+        self.state['downsampling_factor'] = sample_interval
+
+        if i == 0:
+            self.t = np.arange(len(data)) / self.fs
+            self.t = self.t[::sample_interval] / sample_interval
+            self.time_axis_left.set_resampling_factor(sample_interval)
+
+        if len(data) > self.max_npts:
+            data = data[::sample_interval]
+
+        if len(data) > len(self.t):
+            data = data[:len(self.t)]
+        elif len(data) < len(self.t):
+            data = np.pad(data, (0, len(self.t) - len(data)), 'constant')
         data = normalize_stream(data)
 
         spectrogram_params = self.state['spectrogram']
@@ -146,7 +175,7 @@ class MultistationWithSpectogram(BaseSeismicView):
         nperseg = spectrogram_params['nperseg']
         overlap = spectrogram_params['overlap']
         noverlap = int(nperseg * overlap)
-        print(f'noverlap: {noverlap}')
+
         
         f, t_spec, Sxx = spectrogram(
             data, 

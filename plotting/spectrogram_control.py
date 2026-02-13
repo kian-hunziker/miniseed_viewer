@@ -36,11 +36,25 @@ class SpectrogramControlWindow(QtWidgets.QWidget):
         # cmap selection combo box
         # options: viridis, plasma, inferno, magma, cividis and gray
         self.cmap_box = QtWidgets.QComboBox()
-        cmaps = ['viridis', 'plasma', 'inferno', 'magma', 'cividis', 'Greys']
+        cmaps = ['viridis', 'plasma', 'inferno', 'magma', 'cividis', 'black']
         self.cmap_box.addItems(cmaps)
         current_cmap = state['spectrogram']['cmap']
         if current_cmap in cmaps:
             self.cmap_box.setCurrentText(current_cmap)
+
+        self.independent_filtering_checkbox = QtWidgets.QCheckBox("Independent Bandpass Filtering")
+        self.independent_filtering_checkbox.setChecked(state['spectrogram'].get('independent_filtering', False))
+        self.independent_filtering_checkbox.stateChanged.connect(self._on_changed)
+
+        self.filter_min_box = QtWidgets.QDoubleSpinBox()
+        self.filter_min_box.setRange(0.01, 100)
+        self.filter_min_box.setValue(state['spectrogram'].get('f_bandpass_min', 0.1))
+        self.filter_min_box.valueChanged.connect(self._on_changed)
+
+        self.filter_max_box = QtWidgets.QDoubleSpinBox()
+        self.filter_max_box.setRange(0.1, 100)
+        self.filter_max_box.setValue(state['spectrogram'].get('f_bandpass_max', 20.0))
+        self.filter_max_box.valueChanged.connect(self._on_changed)
 
         layout.addRow("NFFT", self.box_nfft)
         layout.addRow("Overlap", self.box_overlap)
@@ -48,15 +62,22 @@ class SpectrogramControlWindow(QtWidgets.QWidget):
         layout.addRow("F max (Hz)", self.box_fmax)
         layout.addRow("Colormap", self.cmap_box)
 
+        layout.addRow(self.independent_filtering_checkbox)
+        layout.addRow("Bandpass F max (Hz)", self.filter_max_box)
+        layout.addRow("Bandpass F min (Hz)", self.filter_min_box)
+        
         for w in (
             self.box_nfft,
             self.box_overlap,
             self.box_fmin,
             self.box_fmax,
+            self.filter_max_box,
+            self.filter_min_box,
         ):
             w.valueChanged.connect(self._on_changed)
         # cmap box
         self.cmap_box.currentTextChanged.connect(self._on_changed)
+        self.independent_filtering_checkbox.stateChanged.connect(self._on_changed)
 
     def _on_changed(self):
         spec = self.state['spectrogram']
@@ -65,4 +86,7 @@ class SpectrogramControlWindow(QtWidgets.QWidget):
         spec['fmin'] = self.box_fmin.value()
         spec['fmax'] = self.box_fmax.value()
         spec['cmap'] = self.cmap_box.currentText()
+        spec['independent_filtering'] = self.independent_filtering_checkbox.isChecked()
+        self.state['spectrogram']['f_bandpass_min'] = self.filter_min_box.value()
+        self.state['spectrogram']['f_bandpass_max'] = self.filter_max_box.value()
         self.paramsChanged.emit(True)

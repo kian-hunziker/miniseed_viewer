@@ -6,6 +6,7 @@ from typing import Union, Tuple
 import pandas as pd
 import torch
 import json
+import re
 
 
 def get_all_miniseed_files(data_dir: str) -> list[str]:
@@ -21,7 +22,9 @@ def get_all_miniseed_files(data_dir: str) -> list[str]:
     subdirectories = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
     daily_waveform_files = []
     for subdir in subdirectories:
-        daily_waveform_files.extend(glob.glob(os.path.join(data_dir, subdir, '*.mseed')))
+        # TODO: check for valid file extensions
+        daily_waveform_files.extend(glob.glob(os.path.join(data_dir, subdir, '*')))
+        # find all files (not directories)
     return daily_waveform_files
 
 
@@ -47,7 +50,8 @@ def load_waveform_multiple_days(
 
     st = Stream()
     for name, file in mseed_names.items():
-        if name.startswith('OV.' + station):  # current format: OV.STATION.--.CHANNEL.YYYYDDD.mseed, e.g. OC.INDI.--.HHE.2020237.mseed
+        file_station = name.split('.')[1]
+        if file_station == station:
             st += read(file)[0]
     if len(st) == 0:
         print(f'No data found for station {station} in provided waveform files.')

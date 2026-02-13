@@ -10,6 +10,13 @@ from obspy import UTCDateTime, Stream, Trace
 from pyqtgraph.exporters import ImageExporter, SVGExporter
 from tqdm import tqdm
 import json
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QFileDialog,
+    QMessageBox,
+)
+from PySide6.QtGui import QAction
 
 from processing.data_loading import (
     get_all_miniseed_files, 
@@ -38,7 +45,7 @@ from plotting.utility_classes import CatalogDialog, EventNoteDialog, CatalogEdit
 # MAIN APPLICATION
 # ==============================================================================
 
-class TremorViewer(QtWidgets.QWidget):
+class TremorViewer(QtWidgets.QMainWindow):
     def __init__(self,
                  data_dir,
                  stations: list[str] = ['JUDI', 'LAFE', 'JACO', 'INDI', ],
@@ -54,10 +61,11 @@ class TremorViewer(QtWidgets.QWidget):
         self.stations = stations
         self.max_npts = max_npts
         self.default_y_range = 4
-        self.event_catalog_path = 'data/events/tremor_multi_tremor_bin_class_seisLM_base_2025-12-05-12h-41m-26s.csv'
-        self.event_catalog = read_event_catalog(self.event_catalog_path)
         self.zero_amplitude = zero_amplitude
         self.clip_amplitude = clip_amplitude
+
+        central_widget = QtWidgets.QWidget()
+        self.setCentralWidget(central_widget)
         
         # load waveform data for all stations
         self.waveform_files = get_all_miniseed_files(data_dir=self.data_dir)
@@ -79,6 +87,19 @@ class TremorViewer(QtWidgets.QWidget):
             st = clip_trace_amplitude(st, max_amplitude=self.clip_amplitude)
             self.station_streams[station] = st'''
         
+        # make folder structure
+        '''
+        -config
+        -data
+            -events
+            -temp_files
+        -outputs
+        '''
+        os.makedirs('config', exist_ok=True)
+        os.makedirs('data/events', exist_ok=True)
+        os.makedirs('data/temp_files', exist_ok=True)
+        os.makedirs('outputs', exist_ok=True)
+        
         # setup window
         self.setWindowTitle("Tremor Viewer v3.0")
         self.resize(1200, 600)
@@ -93,6 +114,41 @@ class TremorViewer(QtWidgets.QWidget):
                 self._setup_initial_state()
         else:
             self._setup_initial_state()
+
+        # load catalogue
+        cat_path = self.state.get('last_catalog_load_folder', None)
+        cat_file = self.state.get('last_loaded_catalog_file', None)
+        if self.state.get('all_catalog_changes_saved', True) == False:
+            # if there are unsaved changes
+            reply = QMessageBox.question(
+                self,
+                "Unsaved Catalog Changes",
+                "There are unsaved changes to the event catalog. Do you want to restore the last catalog you were working on?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            # if yes, restore from temp file
+            temp_path = os.path.join('data/temp_files', 'temp_catalog.csv')
+            if reply == QMessageBox.Yes and os.path.exists(temp_path):
+                    self.event_catalog = read_event_catalog(temp_path)
+                    print(f"Restored event catalog from last session: {temp_path}")
+            else:
+                # try to load from last loaded catalog if temp file doesn't exist
+                if cat_file and os.path.exists(os.path.join(cat_path, cat_file)):
+                    self.event_catalog = read_event_catalog(os.path.join(cat_path, cat_file))
+                    print(f"Loaded previous event catalog from: {os.path.join(cat_path, cat_file)}")
+                else:
+                    self.event_catalog = {}
+
+        elif cat_file and os.path.exists(os.path.join(cat_path, cat_file)):
+            self.event_catalog = read_event_catalog(os.path.join(cat_path, cat_file))
+            print(f"Loaded previous event catalog from: {os.path.join(cat_path, cat_file)}")
+        else:
+            try:
+                self.event_catalog_path = 'data/events/tremor_multi_tremor_bin_class_seisLM_base_2025-12-05-12h-41m-26s.csv'
+                self.event_catalog = read_event_catalog(self.event_catalog_path)
+            except Exception as e:
+                print(f"Failed to load event catalog from {self.event_catalog_path}: {e}")
+                self.event_catalog = {}
         
         self.load_waveform_data()
             
@@ -111,7 +167,7 @@ class TremorViewer(QtWidgets.QWidget):
             'env_linewidth': self.env_linewidth,
         }
 
-        layout = QtWidgets.QVBoxLayout(self)
+        self.layout = QtWidgets.QVBoxLayout(central_widget)
 
         # stacked views
         self.stack = QtWidgets.QStackedWidget()
@@ -165,10 +221,11 @@ class TremorViewer(QtWidgets.QWidget):
             self.stack.setCurrentWidget(self.multi_station_view_spectrograms)
         else:
             raise ValueError(f"Invalid current_view: {self.state['current_view']}")
-        layout.addWidget(self.stack)
+        self.layout.addWidget(self.stack)
         
         # build controls
-        self._build_controls(layout)
+        self._build_controls(self.layout)
+        self._create_menu()
         
         # initial refresh
         QtCore.QTimer.singleShot(0, self.stack.currentWidget().refresh)
@@ -184,6 +241,56 @@ class TremorViewer(QtWidgets.QWidget):
         if self.state['spectrogram']['show_control']:
             self.spec_controls.show()
 
+    def _create_menu(self):
+        menu_bar = self.menuBar()
+
+        # ---- Data Menu ----
+        data_menu = menu_bar.addMenu("Data")
+
+        set_path_action = QAction("Set Data Path…", self)
+        set_path_action.triggered.connect(self.select_data_path)
+        set_path_action.setStatusTip("Select the folder containing your miniseed data files")
+        data_menu.addAction(set_path_action)
+
+        reload_files_action = QAction("Reload Data Files", self)
+        reload_files_action.triggered.connect(self.reload_data_files)
+        reload_files_action.setStatusTip("Reload the list of miniseed files from the current data folder")
+        data_menu.addAction(reload_files_action)
+
+    def select_data_path(self):
+        dialog = QFileDialog(self)
+        dialog.setWindowTitle("Select Data Folder")
+        dialog.setFileMode(QFileDialog.Directory)
+        dialog.setOption(QFileDialog.ShowDirsOnly, True)
+
+        # Start in previous path if available
+        if self.data_dir and os.path.exists(self.data_dir):
+            dialog.setDirectory(self.data_dir)
+
+        if dialog.exec():  # User clicked "Open"
+            selected_folder = dialog.selectedFiles()[0]
+
+            # Confirm selection
+            reply = QMessageBox.question(
+                self,
+                "Confirm Data Path",
+                f"Use this folder as data path?\n\n{selected_folder}",
+                QMessageBox.Yes | QMessageBox.Cancel,
+            )
+
+            if reply == QMessageBox.Yes:
+                self.data_dir = selected_folder
+                self.waveform_files = get_all_miniseed_files(data_dir=self.data_dir)
+                print(f"New data path set to: {self.data_dir}")
+        else:
+            print("Selection canceled")
+    
+    def reload_data_files(self):
+        if self.data_dir and os.path.exists(self.data_dir):
+            self.waveform_files = get_all_miniseed_files(data_dir=self.data_dir)
+            print(f"Reloaded data files from: {self.data_dir}")
+        else:
+            print("No valid data directory set. Please set the data path first.")
         
     def _setup_initial_state(self):
         self.state = {
@@ -214,6 +321,9 @@ class TremorViewer(QtWidgets.QWidget):
                     'mode': 'psd',
                     'log_scale': True,
                     'show_control': True,
+                    'independent_filtering': False,
+                    'f_bandpass_min': 0.1,
+                    'f_bandpass_max': 20.0,
                 }
             }
         # override saved default state, to update defaults
@@ -234,8 +344,19 @@ class TremorViewer(QtWidgets.QWidget):
             data_end_date = max([st[0].stats.endtime.date for st in self.station_streams.values()])
 
         if not has_loaded_data or current_start_date.date < data_start_date or current_end_date.date > data_end_date:
-            jul_strings = get_jul_strings_for_date_range(current_start_date, current_end_date)
-            needed_files = get_filenames_containing_jul_strings(jul_strings=jul_strings, all_filenames=self.waveform_files)
+            #jul_strings = get_jul_strings_for_date_range(current_start_date, current_end_date)
+            #needed_files = get_filenames_containing_jul_strings(jul_strings=jul_strings, all_filenames=self.waveform_files)
+            
+            needed_files = []
+            day = current_start_date
+            while day <= current_end_date + 24*3600:  # add one day to include end date
+                # format day into sting 'YYYY-MM-DD'
+                day_str = UTCDateTime(day).strftime('%Y-%m-%d')
+                # find files whos parent folder match this string
+                day_files = [f for f in self.waveform_files if day_str in f]
+                needed_files.extend(day_files)
+                day += 24*3600
+            
             start_time_stamp = UTCDateTime(current_start_date.year, current_start_date.month, current_start_date.day, 0, 0)
             end_time_stamp = UTCDateTime(current_end_date.year, current_end_date.month, current_end_date.day, 23, 59, 59)
             
@@ -321,7 +442,7 @@ class TremorViewer(QtWidgets.QWidget):
         comp_layout.addWidget(self.rbE)
         comp_layout.addWidget(self.rbZNE)
         
-        if self.state['current_view'] == 'multi_station':
+        if self.state['current_view'] == 'multi_station' or self.state['current_view'] == 'multi_station_spectrograms':
             self.rbZNE.setChecked(False)
             self.rbZ.setChecked(self.state['component'] == 'Z')
             self.rbN.setChecked(self.state['component'] == 'N')
@@ -719,6 +840,7 @@ class TremorViewer(QtWidgets.QWidget):
                 }
 
                 self.event_catalog[len(self.event_catalog)] = new_event
+                self.save_temp_catalog()
                 #write_event_catalog(self.event_catalog, self.event_catalog_path)
                 print(f"Added new event: {new_event}")
                 # update event list
@@ -771,10 +893,18 @@ class TremorViewer(QtWidgets.QWidget):
             self.event_list.clear()
             self.event_list.addItems(event_names)
             self.state['last_catalog_load_folder'] = os.path.dirname(filename)
+            self.state['last_loaded_catalog_file'] = filename
+            self.state['all_catalog_changes_saved'] = True
             self._save_state(name='last')
 
+    def save_temp_catalog(self):
+        temp_path = os.path.join('data/temp_files', 'temp_catalog.csv')
+        write_event_catalog(self.event_catalog, temp_path)
+        self.state['all_catalog_changes_saved'] = False
+        self._save_state(name='last')
+
     def save_catalog(self):
-        default_name = "event_catalog"
+        default_name =  self.state.get('last_saved_catalog_filename', f'event_catalog')
         if self.state['last_catalog_save_folder']:
             start_path = os.path.join(self.state['last_catalog_save_folder'], default_name)
         else:
@@ -789,6 +919,8 @@ class TremorViewer(QtWidgets.QWidget):
             print(f"Saving catalog to: {filename}")
             write_event_catalog(self.event_catalog, filename)
             self.state['last_catalog_save_folder'] = os.path.dirname(filename)
+            self.state['last_saved_catalog_filename'] = os.path.basename(filename)
+            self.state['all_catalog_changes_saved'] = True
             self._save_state(name='last')
     
     def _plot_at_scene_pos(self, scene_pos):
@@ -819,19 +951,16 @@ class TremorViewer(QtWidgets.QWidget):
 
         if plot is None:
             # Click was NOT on a plot (controls, margins, empty space)
-            print("Click not on a plot, ignoring.")
             return
 
         # Click was on a plot
         if event.double():
-            print("Double click detected, clearing selection.")
             for p in self._get_all_plots():
                 vb = p.getViewBox()
                 vb.clear_selection()
                 vb.clear_permanent_selection()
             self.state['selection_start'] = None
             self.state['selection_end'] = None
-            self._update_plots()
         else:
             pass
     
@@ -848,6 +977,7 @@ class TremorViewer(QtWidgets.QWidget):
             ]
             self.event_list.clear()
             self.event_list.addItems(event_names)
+            self.save_temp_catalog()
 
 if __name__ == "__main__":
 
@@ -855,7 +985,10 @@ if __name__ == "__main__":
     # data directory, stations, fs, max_npts, clip_amplitude, zero_amplitude, init_state
     parser = None
 
-    data_dir = '/Users/kianhunziker/Documents/UNI/UNIBAS/MA/seisLM/data/tremor/Tremor_daily'
+    #data_dir = '/Users/kianhunziker/Documents/UNI/UNIBAS/MA/seisLM/data/tremor/Tremor_daily'
+    #data_dir = '/Users/kianhunziker/Documents/UNI/UNIBAS/MA/seisLM/data/tremor/tremor2017'
+    #data_dir = '/Users/kianhunziker/Documents/UNI/UNIBAS/MA/seisLM/data/tremor/tremor2020'
+    data_dir = '/Users/kianhunziker/Documents/UNI/UNIBAS/MA/seisLM/data/tremor/tremor_temp'
     #data_dir = 'data/iris'
     
     
