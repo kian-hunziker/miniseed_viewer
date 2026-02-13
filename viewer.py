@@ -70,8 +70,13 @@ class TremorViewer(QtWidgets.QMainWindow):
         self.setCentralWidget(central_widget)
         
         # load waveform data for all stations
-        self.waveform_files = get_all_miniseed_files(data_dir=self.data_dir)
-        self.station_streams = {}
+        try:
+            self.waveform_files = get_all_miniseed_files(data_dir=self.data_dir)
+            self.station_streams = {}
+        except Exception as e:
+            print(f"Failed to load waveform files from {self.data_dir}: {e}")
+            self.waveform_files = []
+            self.station_streams = {}
         '''
         for station in tqdm(self.stations, desc="Loading stations"):
             st = load_waveform_multiple_days(
